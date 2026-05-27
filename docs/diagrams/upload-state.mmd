@@ -1,0 +1,22 @@
+stateDiagram-v2
+    [*] --> pending: prepare_upload<br/>writes UPLOAD_KV
+    pending --> completed: PUT /upload succeeds<br/>sha256 match
+    pending --> failed: drive error<br/>or sha256 mismatch
+    pending --> [*]: TTL expires (no PUT)
+    completed --> [*]: TTL (24h) expires
+    failed --> [*]: TTL (1h) expires
+
+    note right of pending
+        TTL: token_ttl + 3600s
+        userId / size / contentType / sha256?
+    end note
+
+    note right of completed
+        actualSize, actualSha256
+        driveFileId, driveName, driveMime
+    end note
+
+    note right of failed
+        failureReason recorded
+        Drive file deleted on sha256 mismatch
+    end note

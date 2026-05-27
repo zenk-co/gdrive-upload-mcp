@@ -1,0 +1,30 @@
+{
+  "name": "gdrive-upload-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "docs:build": "mkdir -p docs/diagrams/svg && for f in docs/diagrams/*.mmd; do name=$(basename \"$f\" .mmd); mmdc -i \"$f\" -o \"docs/diagrams/svg/$name.svg\" -b white; done"
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.0.5",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@noble/hashes": "^1.5.0",
+    "agents": "^0.12.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.0",
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "@mermaid-js/mermaid-cli": "^10.9.0",
+    "typescript": "^5.6.0",
+    "vitest": "~2.1.0",
+    "wrangler": "^4.0.0"
+  }
+}

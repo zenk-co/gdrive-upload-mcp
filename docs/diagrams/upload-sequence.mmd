@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant M as McpAgent (/mcp)
+    participant U as Upload handler (/upload/:id)
+    participant K as UPLOAD_KV
+    participant T as TOKEN_KV
+    participant D as Google Drive
+
+    Note over C: sha256 = sha256(file)
+    C->>M: prepare_upload(filename, size, contentType, sha256)
+    M->>M: uploadId = uuid()
+    M->>M: sign HS256 JWT
+    M->>K: put upload:<uploadId> status=pending
+    M-->>C: { uploadId, uploadUrl, uploadToken, expiresAt }
+
+    C->>U: PUT uploadUrl<br/>Authorization: Bearer <jwt><br/>body: file
+    U->>U: verify JWT (uploadId, exp, maxSize)
+    U->>K: get upload:<uploadId>
+    K-->>U: record (pending)
+    U->>T: get gtoken:<userId> (refresh if needed)
+    T-->>U: access_token
+    U->>D: POST /upload?uploadType=resumable
+    D-->>U: Location (session URI)
+    U->>D: PUT session URI<br/>body: TransformStream(sha256, size)
+    D-->>U: { id, name, mimeType, size }
+    U->>U: verify sha256 (if pre-bound)
+    U->>K: put upload:<uploadId> status=completed
+    U-->>C: 200 { accepted, actualSize, actualSha256, fileId }
+
+    C->>M: complete_upload(uploadId, sha256)
+    M->>K: get upload:<uploadId>
+    K-->>M: record (completed, actualSha256, driveFileId)
+    M->>M: verify userId + sha256 match
+    M-->>C: { fileId, resourceUri, name, mimeType, size }

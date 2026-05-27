@@ -1,0 +1,27 @@
+sequenceDiagram
+    autonumber
+    participant C as MCP Client
+    participant O as OAuthProvider (/authorize, /callback)
+    participant G as Google OAuth
+    participant K as OAUTH_KV / TOKEN_KV
+
+    C->>O: GET /authorize?client_id=&state=&redirect_uri=
+    O->>O: parseAuthRequest(req)
+    O->>K: put oauthstate:<state> = AuthRequest
+    O-->>C: 302 to Google /o/oauth2/v2/auth
+    C->>G: GET auth endpoint (scope=drive.file ...)
+    G-->>C: consent screen
+    C->>G: approve
+    G-->>C: 302 to /callback?code=&state=
+    C->>O: GET /callback?code=&state=
+    O->>K: get oauthstate:<state>
+    K-->>O: AuthRequest
+    O->>G: POST /token (code -> tokens)
+    G-->>O: access_token, refresh_token, expires_in
+    O->>G: GET /userinfo
+    G-->>O: { sub, email }
+    O->>K: put gtoken:<userId> (TOKEN_KV)
+    O->>O: completeAuthorization({ userId, scope, props })
+    O-->>C: 302 to client redirect_uri with code
+    C->>O: POST /oauth/token (code exchange)
+    O-->>C: MCP access_token (bound to grant props)

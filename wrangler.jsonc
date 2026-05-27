@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "gdrive-upload-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "MAX_UPLOAD_BYTES": "104857600",
+    "GOOGLE_OAUTH_SCOPES": "openid email profile https://www.googleapis.com/auth/drive.file",
+    "TOKEN_TTL_SECONDS": "900",
+    // デプロイ後に割り当てられる公開 URL に置き換える (deploy.md 参照)
+    "WORKER_BASE_URL": "https://gdrive-upload-mcp.<your-subdomain>.workers.dev"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "MCP_OBJECT", "class_name": "UploadMcpAgent" },
+      { "name": "UPLOAD_SESSION", "class_name": "UploadSession" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["UploadMcpAgent"] },
+    { "tag": "v2", "new_sqlite_classes": ["UploadSession"] }
+  ],
+  // `wrangler kv namespace create <NAME>` で作成し、出力された id をここに貼る (deploy.md 参照)
+  "kv_namespaces": [
+    { "binding": "UPLOAD_KV", "id": "<your-upload-kv-id>" },
+    { "binding": "TOKEN_KV", "id": "<your-token-kv-id>" },
+    { "binding": "OAUTH_KV", "id": "<your-oauth-kv-id>" }
+  ]
+}

@@ -1,0 +1,10 @@
+# Copy to .dev.vars for local development (gitignored).
+# Generate the signing/cookie secrets with: openssl rand -base64 48
+
+JWT_SIGNING_KEY="replace-with-random-secret-min-32-bytes"
+COOKIE_SECRET="replace-with-random-secret-min-32-bytes"
+
+# Google OAuth 2.0 client credentials from Google Cloud Console.
+# Authorized redirect URI: http://localhost:8787/callback
+GOOGLE_CLIENT_ID="your-google-oauth-client-id.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET="your-google-oauth-client-secret"

@@ -1,0 +1,53 @@
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant H as Upload handler (/upload/:id)
+    participant S as UploadSession DO (id = uploadId)
+    participant K as UPLOAD_KV
+    participant T as TOKEN_KV
+    participant D as Google Drive
+
+    Note over C: Client chooses chunk size N (multiple of 256 KiB except final)
+
+    C->>H: PUT body (chunk 1)<br/>Content-Range: bytes 0-(N-1)/TOTAL
+    H->>H: verify JWT, parse Content-Range
+    H->>K: get upload:<uploadId> (pending)
+    H->>T: get/refresh access_token
+    H->>S: init({ accessToken, totalSize, sha256?, ... })
+    S->>D: POST /upload?uploadType=resumable
+    D-->>S: 200 Location (session URI)
+    S->>S: persist sessionUri & state
+    H->>S: receiveChunk(start=0, end=N-1, total, body)
+    S->>S: hasher.update(body)
+    S->>D: PUT session URI<br/>Content-Range: bytes 0-(N-1)/TOTAL
+    D-->>S: 308 Resume Incomplete
+    S-->>H: { status: "incomplete", nextOffset: N }
+    H-->>C: 308 Range: bytes=0-(N-1)
+
+    loop For each remaining chunk
+        C->>H: PUT body (chunk i)<br/>Content-Range: bytes start_i-end_i/TOTAL
+        H->>S: receiveChunk(start_i, end_i, total, body)
+        S->>S: verify start_i == currentOffset<br/>hasher.update(body)
+        S->>D: PUT session URI<br/>Content-Range: bytes start_i-end_i/TOTAL
+        D-->>S: 308 Resume Incomplete
+        S-->>H: incomplete
+        H-->>C: 308
+    end
+
+    C->>H: PUT body (final chunk)<br/>Content-Range: bytes X-(TOTAL-1)/TOTAL
+    H->>S: receiveChunk(X, TOTAL-1, total, body)
+    S->>S: hasher.update(body)
+    S->>D: PUT session URI (final)
+    D-->>S: 200 { id, name, mimeType, size }
+    S->>S: hasher.digest() -> actualSha256
+    alt expectedSha256 matches
+        S->>K: put upload:<uploadId> status=completed
+        S->>S: storage.deleteAll()
+        S-->>H: { status: "complete", file, actualSha256 }
+        H-->>C: 200 { fileId, actualSize, actualSha256 }
+    else mismatch
+        S->>D: DELETE files/<fileId>
+        S->>K: put upload:<uploadId> status=failed
+        S-->>H: { status: "error", httpStatus: 409 }
+        H-->>C: 409 sha256 mismatch
+    end

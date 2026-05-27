@@ -1,0 +1,31 @@
+flowchart LR
+    subgraph Client["MCP Client"]
+        C[Claude Desktop / CLI]
+    end
+
+    subgraph Worker["Cloudflare Worker (single deploy)"]
+        OAUTH["OAuthProvider<br/>/authorize /callback<br/>/oauth/token /oauth/register"]
+        MCP["McpAgent DO<br/>/mcp (Streamable HTTP)"]
+        UP["Upload handler<br/>PUT /upload/:id"]
+    end
+
+    subgraph KV["Cloudflare KV"]
+        UKV[(UPLOAD_KV)]
+        TKV[(TOKEN_KV)]
+        OKV[(OAUTH_KV)]
+    end
+
+    G[Google Drive API]
+
+    C -- "OAuth dance" --> OAUTH
+    C -- "JSON-RPC" --> MCP
+    C -- "PUT body" --> UP
+
+    OAUTH -- "store grant" --> OKV
+    OAUTH -- "store gtoken" --> TKV
+    MCP -- "put upload state" --> UKV
+    MCP -- "read upload state" --> UKV
+    UP -- "read JWT + state" --> UKV
+    UP -- "update completion" --> UKV
+    UP -- "get/refresh access token" --> TKV
+    UP -- "resumable upload" --> G
