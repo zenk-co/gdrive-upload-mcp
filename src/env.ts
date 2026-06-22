@@ -1,5 +1,5 @@
 import type { DurableObjectNamespace, KVNamespace } from "@cloudflare/workers-types";
-import { uploadKey as kitUploadKey } from "mcp-upload-kit";
+import { transferKey as kitTransferKey } from "mcp-upload-kit";
 
 export interface Env {
   MCP_OBJECT: DurableObjectNamespace;
@@ -16,6 +16,7 @@ export interface Env {
   MAX_UPLOAD_BYTES: string;
   GOOGLE_OAUTH_SCOPES: string;
   TOKEN_TTL_SECONDS: string;
+  DOWNLOAD_TTL_SECONDS?: string;
   WORKER_BASE_URL: string;
 }
 
@@ -42,10 +43,12 @@ export interface UploadRecord {
 }
 
 export const UPLOAD_KV_PREFIX = "upload:";
+/** Prefix for download grants in UPLOAD_KV (handled by the kit's TransferStore). */
+export const DOWNLOAD_KV_PREFIX = "download:";
 export const TOKEN_KV_PREFIX = "gtoken:";
 
 export function uploadKey(uploadId: string): string {
-  return kitUploadKey(uploadId, UPLOAD_KV_PREFIX);
+  return kitTransferKey(uploadId, UPLOAD_KV_PREFIX);
 }
 
 export function tokenKey(userId: string): string {
