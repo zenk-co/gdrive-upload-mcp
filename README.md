@@ -74,6 +74,10 @@
 
 設計根拠の全体は [`docs/SPEC.md`](docs/SPEC.md) を参照。
 
+## 🧰 mcp-upload-kit との関係
+
+この repo は [`mcp-upload-kit`](https://github.com/zenk-t-suzuki/mcp-upload-kit) の Google Drive 実装例の元になった実装です。アップロード全体の制御、Google OAuth、Drive resumable upload、MCP tool 定義はこの repo に残し、JWT、SHA-256 stream、`Content-Range`、JSON response、KV key などの汎用 primitive だけを `mcp-upload-kit` に切り出しています。
+
 ## 🚀 セットアップ
 
 ```bash

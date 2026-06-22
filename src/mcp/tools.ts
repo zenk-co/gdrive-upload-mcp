@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Env, UploadRecord, UserProps } from "../env";
 import { uploadKey } from "../env";
-import { signUploadJwt } from "../jwt";
+import { signUploadJwt } from "mcp-upload-kit";
 
 const PREPARE_TOKEN_TTL_DEFAULT = 900;
 const FILENAME_RE = /^[^/\x00]{1,255}$/;

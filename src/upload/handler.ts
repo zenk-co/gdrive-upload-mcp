@@ -1,8 +1,15 @@
 import type { DurableObjectStub } from "@cloudflare/workers-types";
 import type { Env, UploadRecord } from "../env";
 import { uploadKey } from "../env";
-import { verifyUploadJwt, type UploadJwtClaims } from "../jwt";
-import { createShaCountingStream } from "../sha256";
+import {
+  createShaCountingStream,
+  extractBearerToken,
+  jsonResponse as json,
+  parseContentRange,
+  verifyUploadJwt,
+  type ContentRange,
+  type UploadJwtClaims,
+} from "mcp-upload-kit";
 import { getFreshAccessToken } from "../auth/tokens";
 import {
   cancelDriveSession,
@@ -11,12 +18,6 @@ import {
   streamToDriveSession,
 } from "../drive";
 import type { UploadSession, ChunkResult } from "./session";
-
-interface ContentRange {
-  start: number;
-  end: number;
-  total: number;
-}
 
 export async function handleUpload(
   request: Request,
@@ -28,13 +29,12 @@ export async function handleUpload(
   }
   if (!request.body) return json({ error: "missing body" }, 400);
 
-  const auth = request.headers.get("Authorization") ?? "";
-  const match = /^Bearer (.+)$/.exec(auth);
-  if (!match) return json({ error: "missing Authorization: Bearer" }, 401);
+  const token = extractBearerToken(request);
+  if (!token) return json({ error: "missing Authorization: Bearer" }, 401);
 
   let claims: UploadJwtClaims;
   try {
-    claims = await verifyUploadJwt(match[1]!, env.JWT_SIGNING_KEY);
+    claims = await verifyUploadJwt(token, env.JWT_SIGNING_KEY);
   } catch (e) {
     return json({ error: `invalid token: ${(e as Error).message}` }, 401);
   }
@@ -240,17 +240,6 @@ function sessionStub(env: Env, uploadId: string): UploadSessionStub {
 type UploadSessionStub = Pick<UploadSession, "init" | "receiveChunk" | "markCompletedSingle"> &
   DurableObjectStub<UploadSession>;
 
-function parseContentRange(value: string): ContentRange | null {
-  const m = /^bytes\s+(\d+)-(\d+)\/(\d+)$/.exec(value.trim());
-  if (!m) return null;
-  const start = Number(m[1]);
-  const end = Number(m[2]);
-  const total = Number(m[3]);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(total)) return null;
-  if (start < 0 || end < start || end >= total) return null;
-  return { start, end, total };
-}
-
 async function markFailed(
   env: Env,
   uploadId: string,
@@ -260,12 +249,5 @@ async function markFailed(
   const failed: UploadRecord = { ...record, status: "failed", failureReason: reason };
   await env.UPLOAD_KV.put(uploadKey(uploadId), JSON.stringify(failed), {
     expirationTtl: 3600,
-  });
-}
-
-function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8", ...headers },
   });
 }

@@ -24,10 +24,13 @@
 | McpAgent (DO) | MCP の Streamable HTTP エンドポイント。`prepare_upload` / `complete_upload` ツールを公開 | [src/mcp/agent.ts](../src/mcp/agent.ts), [src/mcp/tools.ts](../src/mcp/tools.ts) |
 | Upload handler | `PUT /upload/:uploadId` を受信。`Content-Range` の有無で単一/分割をディスパッチ。単一は JWT 検証 → Drive resumable session 初期化 → SHA-256 計測しつつストリームリレー | [src/upload/handler.ts](../src/upload/handler.ts) |
 | UploadSession (DO) | uploadId ごとの分割アップロード状態を保持。Drive session URI と offset を永続化、SHA-256 ハッシャを in-memory で持つ | [src/upload/session.ts](../src/upload/session.ts) |
-| JWT モジュール | HS256 sign/verify (WebCrypto) | [src/jwt.ts](../src/jwt.ts) |
-| SHA-256 ストリーム | `TransformStream` で累積ハッシュとサイズ超過チェック | [src/sha256.ts](../src/sha256.ts) |
 | Drive クライアント | resumable session init / PUT / cancel / delete | [src/drive.ts](../src/drive.ts) |
 | Google トークンストア | アクセス/リフレッシュトークンの KV 保管と自動リフレッシュ | [src/auth/tokens.ts](../src/auth/tokens.ts) |
+
+> JWT (HS256 sign/verify)・SHA-256 stream・`Content-Range` パース・JSON response・KV key などの
+> 汎用 primitive は [`mcp-upload-kit`](https://github.com/zenk-t-suzuki/mcp-upload-kit) から直接 import
+> している（[src/upload/handler.ts](../src/upload/handler.ts) / [src/mcp/tools.ts](../src/mcp/tools.ts)）。
+> Drive 固有のアップロード制御・OAuth・MCP tool 定義はこの repo に残している。
 
 ## ルーティング
 

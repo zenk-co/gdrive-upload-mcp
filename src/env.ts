@@ -1,4 +1,5 @@
 import type { DurableObjectNamespace, KVNamespace } from "@cloudflare/workers-types";
+import { uploadKey as kitUploadKey } from "mcp-upload-kit";
 
 export interface Env {
   MCP_OBJECT: DurableObjectNamespace;
@@ -44,7 +45,7 @@ export const UPLOAD_KV_PREFIX = "upload:";
 export const TOKEN_KV_PREFIX = "gtoken:";
 
 export function uploadKey(uploadId: string): string {
-  return UPLOAD_KV_PREFIX + uploadId;
+  return kitUploadKey(uploadId, UPLOAD_KV_PREFIX);
 }
 
 export function tokenKey(userId: string): string {

@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import { sha256 } from "@noble/hashes/sha256";
 import { handleUpload } from "../src/upload/handler";
-import { signUploadJwt } from "../src/jwt";
+import { signUploadJwt } from "mcp-upload-kit";
 import { uploadKey, tokenKey, type Env, type UploadRecord } from "../src/env";
 import { MemoryKV } from "./helpers/kv";
 
