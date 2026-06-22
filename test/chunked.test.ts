@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import { handleUpload } from "../src/upload/handler";
-import { signUploadJwt } from "../src/jwt";
+import { signUploadJwt } from "mcp-upload-kit";
 import { uploadKey, tokenKey, type Env, type UploadRecord } from "../src/env";
 import type { ChunkResult, InitArgs, ChunkArgs } from "../src/upload/session";
 import { MemoryKV } from "./helpers/kv";

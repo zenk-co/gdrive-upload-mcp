@@ -1,13 +1,14 @@
 import type { DurableObjectStub } from "@cloudflare/workers-types";
 import type { Env, UploadRecord } from "../env";
 import { uploadKey } from "../env";
-import { verifyUploadJwt, type UploadJwtClaims } from "../jwt";
-import { createShaCountingStream } from "../sha256";
 import {
+  createShaCountingStream,
   extractBearerToken,
   jsonResponse as json,
   parseContentRange,
+  verifyUploadJwt,
   type ContentRange,
+  type UploadJwtClaims,
 } from "mcp-upload-kit";
 import { getFreshAccessToken } from "../auth/tokens";
 import {
