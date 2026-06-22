@@ -15,7 +15,7 @@
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^0.0.5",
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "mcp-upload-kit": "https://github.com/zenk-t-suzuki/mcp-upload-kit/releases/download/v0.1.0/mcp-upload-kit-0.1.0.tgz",
+    "mcp-upload-kit": "https://github.com/zenk-t-suzuki/mcp-upload-kit/releases/download/v0.2.0/mcp-upload-kit-0.2.0.tgz",
     "@noble/hashes": "^1.5.0",
     "agents": "^0.12.0",
     "zod": "^3.23.8"
