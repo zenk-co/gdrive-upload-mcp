@@ -74,6 +74,10 @@ The actual file transfer is a regular HTTPS `PUT` to `uploadUrl` between the two
 
 Full design rationale lives in [`docs/SPEC.md`](docs/SPEC.md).
 
+## 🧰 Relationship to mcp-upload-kit
+
+This repository is the source implementation behind the Google Drive example in [`mcp-upload-kit`](https://github.com/zenk-t-suzuki/mcp-upload-kit). The upload control flow, Google OAuth, Drive resumable upload, and MCP tool definitions remain here; only reusable primitives such as JWTs, SHA-256 streaming, `Content-Range`, JSON responses, and KV upload keys are extracted into `mcp-upload-kit`.
+
 ## 🚀 Quick Start
 
 ```bash
