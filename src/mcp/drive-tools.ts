@@ -1,17 +1,14 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { createUploadId, createUploadToken } from "mcp-upload-kit";
-import type { Env, UserProps, DownloadRecord } from "../env";
-import { downloadKey } from "../env";
+import type { Env, UserProps } from "../env";
 import { getFreshAccessToken } from "../auth/tokens";
 import {
   driveSearch,
   driveGetMetadata,
   deleteDriveFileChecked,
 } from "../drive";
-
-const DOWNLOAD_TTL_DEFAULT = 900;
+import { downloads } from "../download/controller";
 
 export type GetUserProps = () => UserProps | undefined;
 
@@ -35,8 +32,6 @@ function errorResult(message: string): CallToolResult {
  * targets files this app created (`drive.file`).
  */
 export function registerDriveTools(server: McpServer, env: Env, getProps: GetUserProps): void {
-  const origin = env.WORKER_BASE_URL.replace(/\/$/, "");
-  const downloadTtl = Number(env.DOWNLOAD_TTL_SECONDS) || Number(env.TOKEN_TTL_SECONDS) || DOWNLOAD_TTL_DEFAULT;
 
   server.registerTool(
     "search_files",
@@ -123,29 +118,16 @@ export function registerDriveTools(server: McpServer, env: Env, getProps: GetUse
           );
         }
 
-        const downloadId = createUploadId();
-        const token = createUploadToken();
-        const exp = Math.floor(Date.now() / 1000) + downloadTtl;
-        const expiresAt = new Date(exp * 1000).toISOString();
-
-        const record: DownloadRecord = {
-          userId,
-          fileId,
+        const grant = await downloads(env).prepare({
+          owner: userId,
           name: meta.name,
-          mimeType: meta.mimeType,
-          size: meta.size ?? "",
-          token,
-          expiresAt,
-        };
-        await env.UPLOAD_KV.put(downloadKey(downloadId), JSON.stringify(record), {
-          expirationTtl: downloadTtl + 60,
+          contentType: meta.mimeType,
+          ...(meta.size ? { size: Number(meta.size) } : {}),
+          metadata: { fileId },
         });
 
         return ok({
-          downloadId,
-          downloadUrl: `${origin}/download/${downloadId}`,
-          downloadToken: token,
-          expiresAt,
+          ...grant,
           name: meta.name,
           mimeType: meta.mimeType,
           ...(meta.size ? { size: Number(meta.size) } : {}),

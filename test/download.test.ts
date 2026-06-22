@@ -1,12 +1,11 @@
 import { describe, test, expect, afterEach, vi } from "vitest";
 import { handleDownload } from "../src/download/handler";
-import { downloadKey, tokenKey, type Env, type DownloadRecord } from "../src/env";
+import { downloads } from "../src/download/controller";
+import { tokenKey, type Env } from "../src/env";
 import { MemoryKV } from "./helpers/kv";
 
 const USER_ID = "user-abc";
-const DOWNLOAD_ID = "22222222-2222-2222-2222-222222222222";
 const FILE_ID = "drive-file-1";
-const TOKEN = "download-token-xyz";
 const FILE_BYTES = new TextEncoder().encode("hello drive");
 
 function buildEnv(uploadKv: MemoryKV, tokenKv: MemoryKV): Env {
@@ -39,24 +38,20 @@ async function seedToken(kv: MemoryKV): Promise<void> {
   );
 }
 
-async function seedDownload(kv: MemoryKV, patch: Partial<DownloadRecord> = {}): Promise<void> {
-  const record: DownloadRecord = {
-    userId: USER_ID,
-    fileId: FILE_ID,
+async function issueGrant(env: Env) {
+  return downloads(env).prepare({
+    owner: USER_ID,
     name: "hello.txt",
-    mimeType: "text/plain",
-    size: String(FILE_BYTES.byteLength),
-    token: TOKEN,
-    expiresAt: new Date(Date.now() + 60_000).toISOString(),
-    ...patch,
-  };
-  await kv.put(downloadKey(DOWNLOAD_ID), JSON.stringify(record));
+    contentType: "text/plain",
+    size: FILE_BYTES.byteLength,
+    metadata: { fileId: FILE_ID },
+  });
 }
 
 function getRequest(token: string | null, method = "GET"): Request {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
-  return new Request(`http://localhost:8787/download/${DOWNLOAD_ID}`, { method, headers });
+  return new Request("http://localhost:8787/download/x", { method, headers });
 }
 
 function mockDriveDownload(status = 200) {
@@ -82,13 +77,13 @@ afterEach(() => {
 
 describe("handleDownload", () => {
   test("streams the file bytes for a valid grant", async () => {
-    const uploadKv = new MemoryKV();
     const tokenKv = new MemoryKV();
     await seedToken(tokenKv);
-    await seedDownload(uploadKv);
+    const env = buildEnv(new MemoryKV(), tokenKv);
+    const grant = await issueGrant(env);
     restore = mockDriveDownload();
 
-    const res = await handleDownload(getRequest(TOKEN), buildEnv(uploadKv, tokenKv), DOWNLOAD_ID);
+    const res = await handleDownload(getRequest(grant.downloadToken), env, grant.downloadId);
 
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("text/plain");
@@ -97,48 +92,39 @@ describe("handleDownload", () => {
   });
 
   test("rejects an invalid token", async () => {
-    const uploadKv = new MemoryKV();
-    const tokenKv = new MemoryKV();
-    await seedToken(tokenKv);
-    await seedDownload(uploadKv);
-    const res = await handleDownload(getRequest("wrong"), buildEnv(uploadKv, tokenKv), DOWNLOAD_ID);
+    const env = buildEnv(new MemoryKV(), new MemoryKV());
+    const grant = await issueGrant(env);
+    const res = await handleDownload(getRequest("wrong"), env, grant.downloadId);
     expect(res.status).toBe(401);
   });
 
   test("rejects a missing bearer token", async () => {
-    const uploadKv = new MemoryKV();
-    const res = await handleDownload(getRequest(null), buildEnv(uploadKv, new MemoryKV()), DOWNLOAD_ID);
+    const env = buildEnv(new MemoryKV(), new MemoryKV());
+    const grant = await issueGrant(env);
+    const res = await handleDownload(getRequest(null), env, grant.downloadId);
     expect(res.status).toBe(401);
   });
 
   test("returns 404 for an unknown download id", async () => {
-    const res = await handleDownload(getRequest(TOKEN), buildEnv(new MemoryKV(), new MemoryKV()), DOWNLOAD_ID);
+    const env = buildEnv(new MemoryKV(), new MemoryKV());
+    const res = await handleDownload(getRequest("any"), env, "00000000-0000-0000-0000-000000000000");
     expect(res.status).toBe(404);
   });
 
-  test("returns 410 for an expired grant", async () => {
-    const uploadKv = new MemoryKV();
-    const tokenKv = new MemoryKV();
-    await seedToken(tokenKv);
-    await seedDownload(uploadKv, { expiresAt: new Date(Date.now() - 1000).toISOString() });
-    const res = await handleDownload(getRequest(TOKEN), buildEnv(uploadKv, tokenKv), DOWNLOAD_ID);
-    expect(res.status).toBe(410);
-  });
-
   test("rejects non-GET methods", async () => {
-    const uploadKv = new MemoryKV();
-    await seedDownload(uploadKv);
-    const res = await handleDownload(getRequest(TOKEN, "POST"), buildEnv(uploadKv, new MemoryKV()), DOWNLOAD_ID);
+    const env = buildEnv(new MemoryKV(), new MemoryKV());
+    const grant = await issueGrant(env);
+    const res = await handleDownload(getRequest(grant.downloadToken, "POST"), env, grant.downloadId);
     expect(res.status).toBe(405);
   });
 
   test("returns 502 when Drive download fails", async () => {
-    const uploadKv = new MemoryKV();
     const tokenKv = new MemoryKV();
     await seedToken(tokenKv);
-    await seedDownload(uploadKv);
+    const env = buildEnv(new MemoryKV(), tokenKv);
+    const grant = await issueGrant(env);
     restore = mockDriveDownload(403);
-    const res = await handleDownload(getRequest(TOKEN), buildEnv(uploadKv, tokenKv), DOWNLOAD_ID);
+    const res = await handleDownload(getRequest(grant.downloadToken), env, grant.downloadId);
     expect(res.status).toBe(502);
   });
 });

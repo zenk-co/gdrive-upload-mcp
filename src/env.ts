@@ -1,5 +1,5 @@
 import type { DurableObjectNamespace, KVNamespace } from "@cloudflare/workers-types";
-import { uploadKey as kitUploadKey } from "mcp-upload-kit";
+import { transferKey as kitTransferKey } from "mcp-upload-kit";
 
 export interface Env {
   MCP_OBJECT: DurableObjectNamespace;
@@ -42,31 +42,13 @@ export interface UploadRecord {
   failureReason?: string;
 }
 
-/**
- * A short-lived download grant. Issued by the `download_file` MCP tool and
- * redeemed by `GET /download/:downloadId`, so the file bytes stream directly
- * from Drive to the client instead of travelling through the MCP channel.
- */
-export interface DownloadRecord {
-  userId: string;
-  fileId: string;
-  name: string;
-  mimeType: string;
-  size: string;
-  token: string;
-  expiresAt: string;
-}
-
 export const UPLOAD_KV_PREFIX = "upload:";
+/** Prefix for download grants in UPLOAD_KV (handled by the kit's TransferStore). */
 export const DOWNLOAD_KV_PREFIX = "download:";
 export const TOKEN_KV_PREFIX = "gtoken:";
 
 export function uploadKey(uploadId: string): string {
-  return kitUploadKey(uploadId, UPLOAD_KV_PREFIX);
-}
-
-export function downloadKey(downloadId: string): string {
-  return kitUploadKey(downloadId, DOWNLOAD_KV_PREFIX);
+  return kitTransferKey(uploadId, UPLOAD_KV_PREFIX);
 }
 
 export function tokenKey(userId: string): string {

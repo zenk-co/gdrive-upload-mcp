@@ -2,7 +2,8 @@ import { describe, test, expect, afterEach, vi } from "vitest";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { registerDriveTools } from "../src/mcp/drive-tools";
-import { downloadKey, tokenKey, type Env, type UserProps, type DownloadRecord } from "../src/env";
+import { DOWNLOAD_KV_PREFIX, tokenKey, type Env, type UserProps } from "../src/env";
+import type { TransferDownloadRecord } from "mcp-upload-kit";
 import { MemoryKV } from "./helpers/kv";
 
 const USER_ID = "user-abc";
@@ -133,8 +134,10 @@ describe("registerDriveTools", () => {
     // No bytes in the tool result.
     expect(JSON.stringify(res)).not.toContain("application/pdf-bytes");
 
-    const stored = JSON.parse((await uploadKv.get(downloadKey(out.downloadId)))!) as DownloadRecord;
-    expect(stored).toMatchObject({ userId: USER_ID, fileId: "f1", token: out.downloadToken });
+    const stored = JSON.parse(
+      (await uploadKv.get(`${DOWNLOAD_KV_PREFIX}${out.downloadId}`))!,
+    ) as TransferDownloadRecord<{ fileId: string }>;
+    expect(stored).toMatchObject({ owner: USER_ID, token: out.downloadToken, metadata: { fileId: "f1" } });
   });
 
   test("download_file refuses Google-native files", async () => {
