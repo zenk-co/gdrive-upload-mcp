@@ -2,9 +2,16 @@
 
 [← SPEC.md に戻る](./SPEC.md)
 
-MCP サーバーが公開する 2 つのツール。実装は [src/mcp/tools.ts](../src/mcp/tools.ts)。
+MCP サーバーが公開するツール。アップロード系の実装は [src/mcp/tools.ts](../src/mcp/tools.ts)、
+Drive 読み取り/管理系は [src/mcp/drive-tools.ts](../src/mcp/drive-tools.ts)。
 
-両ツールとも認証必須。`getMcpAuthContext()` から `props.userId` を取得し、操作の所有者を確認する。
+全ツール認証必須。`getMcpAuthContext()` から `props.userId` を取得し、操作の所有者を確認する。
+
+| ツール | 区分 | 必要スコープ |
+|---|---|---|
+| `prepare_upload` / `complete_upload` | アップロード | `drive.file` |
+| `search_files` / `get_file_metadata` / `download_file` | 読み取り | `drive.readonly` |
+| `delete_file` | 管理 | `drive.file` |
 
 ## `prepare_upload`
 
@@ -76,3 +83,57 @@ MCP サーバーが公開する 2 つのツール。実装は [src/mcp/tools.ts]
 | `driveFileId` が記録されていない | `missing driveFileId in record` |
 
 `complete_upload` は冪等。完了済みレコードに対する 2 回目以降の呼び出しは同じ結果を返す。
+
+---
+
+## `search_files`
+
+ユーザーの Drive を検索/一覧する（要 `drive.readonly`）。
+
+| 入力 | 型 | 必須 | 内容 |
+|---|---|---|---|
+| `query` | string | — | Drive クエリ構文（例: `name contains 'report'`）。省略時は最近のファイル |
+| `pageSize` | integer | — | 1〜100（既定 25） |
+| `pageToken` | string | — | 前回結果の `nextPageToken` |
+
+出力: `{ files: [{ id, name, mimeType, size?, modifiedTime? }], nextPageToken? }`
+
+## `get_file_metadata`
+
+`fileId` のメタデータを返す（要 `drive.readonly`）。
+
+| 入力 | 型 | 必須 |
+|---|---|---|
+| `fileId` | string | ✓ |
+
+出力: `{ id, name, mimeType, size?, modifiedTime? }`
+
+## `download_file`
+
+**バイトは返さない。** 短命の HTTPS ダウンロード URL を発行する（要 `drive.readonly`）。
+大きいファイルでも MCP チャネル/モデルコンテキストにバイトが載らないよう、アップロードと
+鏡写しの「制御プレーン / データプレーン分離」にしている。
+
+| 入力 | 型 | 必須 |
+|---|---|---|
+| `fileId` | string | ✓ |
+
+出力: `{ downloadId, downloadUrl, downloadToken, expiresAt, name, mimeType, size? }`
+
+クライアントは `GET <downloadUrl>` に `Authorization: Bearer <downloadToken>` を付けて取得する。
+Worker は [`/download/:downloadId`](./architecture.md#ルーティング) で検証し、Drive から直接ストリームする。
+
+### 副作用 / エラー
+
+- `UPLOAD_KV` に `download:<downloadId>` を書き込む（TTL: `DOWNLOAD_TTL_SECONDS`(既定 900) + 60）
+- Google ネイティブ形式（Docs/Sheets/Slides 等）は直接 DL 不可のため `isError` を返す
+
+## `delete_file`
+
+このアプリがアクセスできる Drive ファイルを削除する（要 `drive.file`）。
+
+| 入力 | 型 | 必須 |
+|---|---|---|
+| `fileId` | string | ✓ |
+
+出力: `{ deleted: true, fileId }`

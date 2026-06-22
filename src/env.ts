@@ -16,6 +16,7 @@ export interface Env {
   MAX_UPLOAD_BYTES: string;
   GOOGLE_OAUTH_SCOPES: string;
   TOKEN_TTL_SECONDS: string;
+  DOWNLOAD_TTL_SECONDS?: string;
   WORKER_BASE_URL: string;
 }
 
@@ -41,11 +42,31 @@ export interface UploadRecord {
   failureReason?: string;
 }
 
+/**
+ * A short-lived download grant. Issued by the `download_file` MCP tool and
+ * redeemed by `GET /download/:downloadId`, so the file bytes stream directly
+ * from Drive to the client instead of travelling through the MCP channel.
+ */
+export interface DownloadRecord {
+  userId: string;
+  fileId: string;
+  name: string;
+  mimeType: string;
+  size: string;
+  token: string;
+  expiresAt: string;
+}
+
 export const UPLOAD_KV_PREFIX = "upload:";
+export const DOWNLOAD_KV_PREFIX = "download:";
 export const TOKEN_KV_PREFIX = "gtoken:";
 
 export function uploadKey(uploadId: string): string {
   return kitUploadKey(uploadId, UPLOAD_KV_PREFIX);
+}
+
+export function downloadKey(downloadId: string): string {
+  return kitUploadKey(downloadId, DOWNLOAD_KV_PREFIX);
 }
 
 export function tokenKey(userId: string): string {

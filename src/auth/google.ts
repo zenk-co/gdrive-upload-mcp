@@ -36,7 +36,7 @@ export const googleAuthHandler = {
           resource: `${url.origin}/mcp`,
           authorization_servers: [url.origin],
           bearer_methods_supported: ["header"],
-          scopes_supported: ["drive.file"],
+          scopes_supported: ["drive.file", "drive.readonly"],
         },
         { headers: { "Access-Control-Allow-Origin": "*" } }
       );
@@ -48,7 +48,7 @@ export const googleAuthHandler = {
           resource: `${url.origin}/mcp`,
           authorization_servers: [url.origin],
           bearer_methods_supported: ["header"],
-          scopes_supported: ["drive.file"],
+          scopes_supported: ["drive.file", "drive.readonly"],
         },
         { headers: { "Access-Control-Allow-Origin": "*" } }
       );
@@ -126,7 +126,7 @@ async function handleGoogleCallback(request: Request, env: AuthEnv): Promise<Res
   const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
     request: oauthReq,
     userId: userInfo.sub,
-    scope: ["drive.file"],
+    scope: ["drive.file", "drive.readonly"],
     metadata: { email: userInfo.email },
     props,
   });

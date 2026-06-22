@@ -63,8 +63,18 @@
 | --- | --- | --- |
 | `prepare_upload` | `{ filename, size, contentType, sha256?, parentFolderId? }` | `{ uploadId, uploadUrl, uploadToken, expiresAt }` |
 | `complete_upload` | `{ uploadId, sha256 }` | `{ fileId, resourceUri, name, mimeType, size, sha256 }` |
+| `search_files` | `{ query?, pageSize?, pageToken? }` | `{ files: [...], nextPageToken? }` |
+| `get_file_metadata` | `{ fileId }` | `{ id, name, mimeType, size?, modifiedTime? }` |
+| `download_file` | `{ fileId }` | `{ downloadId, downloadUrl, downloadToken, expiresAt, name, mimeType, size? }` |
+| `delete_file` | `{ fileId }` | `{ deleted, fileId }` |
 
-実際のファイル転送は、2 つの呼び出しの間に `uploadUrl` へ行う通常の HTTPS `PUT` です(→ [使い方](#-使い方))。
+実際のファイル転送は、ツール呼び出しの**間**に行う通常の HTTPS 転送です(→ [使い方](#-使い方))。
+アップロードは `uploadUrl` への `PUT`、ダウンロードは `download_file` が返す `downloadUrl` への
+`GET`(`Authorization: Bearer <downloadToken>`)。**バイトは MCP チャネルを通らない**ため大きいファイルでも
+モデルのコンテキストを汚しません。詳細は [docs/mcp-tools.md](docs/mcp-tools.md)。
+
+> 検索・閲覧・ダウンロードには `drive.readonly` スコープが必要です。導入時に `GOOGLE_OAUTH_SCOPES`
+> を設定し、スコープ変更後は既存ユーザーの**再認証(再同意)**が必要になります。
 
 ## 🏗️ アーキテクチャ
 
@@ -147,7 +157,9 @@ npm run dev                       # http://localhost:8787
 ## ⚠️ 制限・既知の事項
 
 - 単一 `PUT` のサイズは Cloudflare Workers の上限まで (`MAX_UPLOAD_BYTES`)。それ以上はチャンク分割 `PUT` に対応。
-- `drive.file` スコープのため、このサーバー経由で作成したファイルのみ Drive API から参照可能。
+- `delete_file` は `drive.file` スコープのため、このサーバー経由で作成したファイルのみ削除可能。
+  一方 `search_files` / `get_file_metadata` / `download_file` は `drive.readonly` でユーザーの Drive 全体が対象。
+- `download_file` は Google ネイティブ形式 (Docs/Sheets/Slides 等) を直接 DL 不可（エクスポート未対応）。
 - KV は結果整合。`prepare_upload` 直後の `complete_upload` で稀に再試行が要る場合あり。
 
 ## 🤝 コントリビュート

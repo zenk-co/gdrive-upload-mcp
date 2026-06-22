@@ -82,3 +82,75 @@ export async function deleteDriveFile(accessToken: string, fileId: string): Prom
     // best effort
   }
 }
+
+// --- Read / management operations -----------------------------------------
+
+const DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
+const DRIVE_INFO_FIELDS = "id,name,mimeType,size,modifiedTime";
+
+export interface DriveFileInfo {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: string;
+  modifiedTime?: string;
+}
+
+function authHeaders(accessToken: string): HeadersInit {
+  return { Authorization: `Bearer ${accessToken}` };
+}
+
+export async function driveSearch(args: {
+  accessToken: string;
+  query?: string;
+  pageSize?: number;
+  pageToken?: string;
+}): Promise<{ files: DriveFileInfo[]; nextPageToken?: string }> {
+  const params = new URLSearchParams({
+    fields: `nextPageToken,files(${DRIVE_INFO_FIELDS})`,
+    pageSize: String(args.pageSize ?? 25),
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+    corpora: "user",
+    orderBy: "modifiedTime desc",
+  });
+  if (args.query) params.set("q", args.query);
+  if (args.pageToken) params.set("pageToken", args.pageToken);
+
+  const res = await fetch(`${DRIVE_FILES_URL}?${params.toString()}`, { headers: authHeaders(args.accessToken) });
+  if (!res.ok) throw new Error(`drive search failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as { files: DriveFileInfo[]; nextPageToken?: string };
+}
+
+export async function driveGetMetadata(args: {
+  accessToken: string;
+  fileId: string;
+}): Promise<DriveFileInfo> {
+  const url = `${DRIVE_FILES_URL}/${encodeURIComponent(args.fileId)}?fields=${encodeURIComponent(
+    DRIVE_INFO_FIELDS,
+  )}&supportsAllDrives=true`;
+  const res = await fetch(url, { headers: authHeaders(args.accessToken) });
+  if (res.status === 404) throw new Error("file not found or not accessible");
+  if (!res.ok) throw new Error(`drive metadata failed: ${res.status} ${await res.text()}`);
+  return (await res.json()) as DriveFileInfo;
+}
+
+/** Returns the raw Drive `alt=media` response so the caller can stream the body. */
+export async function driveDownloadResponse(args: {
+  accessToken: string;
+  fileId: string;
+}): Promise<Response> {
+  const url = `${DRIVE_FILES_URL}/${encodeURIComponent(args.fileId)}?alt=media&supportsAllDrives=true`;
+  return fetch(url, { headers: authHeaders(args.accessToken) });
+}
+
+/** Like {@link deleteDriveFile} but surfaces failures (used by the delete_file tool). */
+export async function deleteDriveFileChecked(accessToken: string, fileId: string): Promise<void> {
+  const res = await fetch(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}`, {
+    method: "DELETE",
+    headers: authHeaders(accessToken),
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`drive delete failed: ${res.status} ${await res.text()}`);
+  }
+}
