@@ -178,9 +178,20 @@ export class UploadSession extends DurableObject<Env> {
       const file = (await driveRes.json()) as DriveFileMetadata;
       const actualSha256 = this.hasherValid ? toHex(this.hasher.digest()) : null;
 
+      // The in-memory hasher was lost (DO restart / retried chunk): the bytes
+      // can't be verified, so don't leave an unverified file in Drive.
+      if (!actualSha256) {
+        await deleteDriveFile(args.accessToken, file.id);
+        await this.markFailed(state, "sha256 unverifiable: hasher state lost mid-upload");
+        return {
+          status: "error",
+          httpStatus: 409,
+          message: "sha256 could not be verified (upload session restarted); start a new upload",
+        };
+      }
+
       if (
         state.expectedSha256 &&
-        actualSha256 &&
         state.expectedSha256.toLowerCase() !== actualSha256.toLowerCase()
       ) {
         await deleteDriveFile(args.accessToken, file.id);
@@ -198,11 +209,10 @@ export class UploadSession extends DurableObject<Env> {
         ...(state.parents ? { parentFolderId: state.parents[0]! } : {}),
         expiresAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
         actualSize: Number(file.size) || state.totalSize,
-        ...(actualSha256 ? { actualSha256 } : {}),
+        actualSha256,
         driveFileId: file.id,
         driveName: file.name,
         driveMime: file.mimeType,
-        ...(actualSha256 ? {} : { failureReason: "hasher invalidated mid-upload; sha256 unverified" }),
       };
       await this.setRecord(record);
       await this.env.UPLOAD_KV.put(uploadKey(state.uploadId), JSON.stringify(record), {

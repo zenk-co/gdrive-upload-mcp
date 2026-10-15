@@ -117,7 +117,7 @@ interface GoogleTokenRecord {
 | フィールド | 型 | 用途 |
 |---|---|---|
 | `hasher` | `@noble/hashes` SHA256 | 受信バイトを累積ハッシュ |
-| `hasherValid` | boolean | DO ハイバネート時に false にフォールバック、sha256 検証を無効化する印 |
+| `hasherValid` | boolean | DO ハイバネート時に false にフォールバックする印。false のまま最終チャンクに達したら sha256 を検証できないので Drive ファイルを削除し `failed` にする |
 | `bytesHashed` | number | ハッシャに通したバイト数。`currentOffset` とずれた場合は invalid 判定 |
 
 ## OAuth State (`OAUTH_KV`)
@@ -133,6 +133,13 @@ type OAuthStateRecord = AuthRequest;  // workers-oauth-provider の型
 ```
 
 TTL: 10 分 (`STATE_TTL_SECONDS`)。`/callback` 処理時に取り出し、即削除。
+
+## OAuth 用 Cookie
+
+| Cookie | 値 | 属性 | 用途 |
+|---|---|---|---|
+| `__Host-gdmcp_state` | `state` (UUID) | `HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600` | `GET /authorize` で発行。承認フォーム POST の CSRF トークン (double-submit) と、`/callback` でのブラウザ紐付け (login CSRF 対策) に使う。`/callback` 完了時に削除 |
+| `__Host-gdmcp_approved` | `base64url(JSON client_id[])` + `.` + `base64url(HMAC-SHA256(COOKIE_SECRET))` | `HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=1年` | このブラウザで承認済みの `client_id` 一覧 (最大 30 件)。署名不一致なら空として扱う |
 
 ## Drive リソース表現
 

@@ -5,15 +5,23 @@ sequenceDiagram
     participant G as Google OAuth
     participant K as OAUTH_KV / TOKEN_KV
 
-    C->>O: GET /authorize?client_id=&state=&redirect_uri=
-    O->>O: parseAuthRequest(req)
+    C->>O: GET /authorize?client_id=&redirect_uri=&code_challenge=(S256)&state=
+    O->>O: parseAuthRequest(req) + lookupClient / redirect_uri / PKCE S256 check
     O->>K: put oauthstate:<state> = AuthRequest
-    O-->>C: 302 to Google /o/oauth2/v2/auth
-    C->>G: GET auth endpoint (scope=drive.file ...)
+    alt client_id not in signed approval cookie
+        O-->>C: 200 approval page (client name, redirect host) + Set-Cookie state
+        C->>O: POST /authorize (state, Cookie: state)
+        O->>O: form state == state cookie (CSRF)
+        O-->>C: 302 to Google + Set-Cookie approved client_ids (HMAC)
+    else already approved in this browser
+        O-->>C: 302 to Google + Set-Cookie state
+    end
+    C->>G: GET auth endpoint (scope=drive.file drive.readonly ...)
     G-->>C: consent screen
     C->>G: approve
     G-->>C: 302 to /callback?code=&state=
-    C->>O: GET /callback?code=&state=
+    C->>O: GET /callback?code=&state= (Cookie: state)
+    O->>O: state cookie == state (browser binding)
     O->>K: get oauthstate:<state>
     K-->>O: AuthRequest
     O->>G: POST /token (code -> tokens)
@@ -22,6 +30,6 @@ sequenceDiagram
     G-->>O: { sub, email }
     O->>K: put gtoken:<userId> (TOKEN_KV)
     O->>O: completeAuthorization({ userId, scope, props })
-    O-->>C: 302 to client redirect_uri with code
-    C->>O: POST /oauth/token (code exchange)
+    O-->>C: 302 to client redirect_uri with code (clear state cookie)
+    C->>O: POST /oauth/token (code + code_verifier)
     O-->>C: MCP access_token (bound to grant props)

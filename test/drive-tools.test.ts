@@ -171,6 +171,22 @@ describe("registerDriveTools", () => {
     expect(res.structuredContent).toMatchObject({ deleted: true, fileId: "f1" });
   });
 
+  test("tool descriptions flag Drive content as untrusted and delete as destructive", () => {
+    const configs = new Map<string, { description: string; annotations: Record<string, boolean> }>();
+    const server = {
+      registerTool(name: string, config: { description: string; annotations: Record<string, boolean> }) {
+        configs.set(name, config);
+      },
+    } as unknown as McpServer;
+    registerDriveTools(server, buildEnv(new MemoryKV(), new MemoryKV()), () => undefined);
+
+    for (const name of ["search_files", "get_file_metadata", "download_file"]) {
+      expect(configs.get(name)!.description).toMatch(/untrusted/i);
+    }
+    expect(configs.get("delete_file")!.description).toMatch(/confirm with the user/i);
+    expect(configs.get("delete_file")!.annotations.destructiveHint).toBe(true);
+  });
+
   test("tools surface an auth error when the user is not authenticated", async () => {
     const { server, call } = fakeServer();
     registerDriveTools(server, buildEnv(new MemoryKV(), new MemoryKV()), () => undefined);

@@ -95,7 +95,7 @@ Worker は `UploadSession` Durable Object (uploadId ごとに 1 インスタン�
 
 ### SHA-256 の扱い
 
-ハッシャは DO メモリ上に保持。DO がチャンク間でハイバネートすると in-memory hasher が消失するため、その場合は `hasherValid=false` にフォールバックし sha256 検証を無効化、`UPLOAD_KV` の `failureReason` に「hasher invalidated mid-upload」を記録する。実運用では数秒〜数分間隔のチャンクであれば DO は常駐する想定。長時間中断するケースでは新しい `uploadId` を切り直す。
+ハッシャは DO メモリ上に保持。DO がチャンク間でハイバネートすると in-memory hasher が消失するため、その場合は `hasherValid=false` にフォールバックし、最終チャンク完了時に sha256 を検証できないため Drive 上のファイルを削除して `UPLOAD_KV` を `failed` (`failureReason`: 「sha256 unverifiable」) にし、409 を返す (未検証のファイルを Drive に残さない)。実運用では数秒〜数分間隔のチャンクであれば DO は常駐する想定。長時間中断するケースでは新しい `uploadId` を切り直す。
 
 ### Drive 側のチャンクサイズ制約
 

@@ -8,7 +8,7 @@ Cloudflare Worker 上の MCP サーバーは「**制御プレーン**」、ユ�
 
 - **制御プレーン (`/mcp`)** — アップロード前後の調停。`prepare_upload` で短命の JWT を発行し、`complete_upload` で SHA-256 と保存状態を検証
 - **データプレーン (`/upload/:uploadId`)** — クライアントから直接 PUT を受け、Worker 内で SHA-256 を計算しながら Google Drive resumable session にストリームリレー
-- **認証** — `@cloudflare/workers-oauth-provider` で OAuth 2.1 を提供。upstream IdP は Google で、`drive.file` スコープを取得しユーザー本人の Drive へ保存
+- **認証** — `@cloudflare/workers-oauth-provider` で OAuth 2.1 を提供。upstream IdP は Google で、`drive.file` (アプリ作成ファイルの作成/削除) と `drive.readonly` (Drive 全体の検索/閲覧/ダウンロード) スコープを取得しユーザー本人の Drive を操作。クライアントごとに初回のみ本サーバーの承認画面を挟む
 
 実装の概観は [architecture.md](./architecture.md) を参照。
 

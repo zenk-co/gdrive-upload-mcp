@@ -8,14 +8,15 @@ interface Entry {
 export class MemoryKV {
   private store = new Map<string, Entry>();
 
-  async get(key: string): Promise<string | null> {
+  async get(key: string, options?: { type?: string } | string): Promise<any> {
     const entry = this.store.get(key);
     if (!entry) return null;
     if (entry.expiresAt !== null && entry.expiresAt < Date.now()) {
       this.store.delete(key);
       return null;
     }
-    return entry.value;
+    const type = typeof options === "string" ? options : options?.type;
+    return type === "json" ? JSON.parse(entry.value) : entry.value;
   }
 
   async put(
