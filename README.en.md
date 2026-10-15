@@ -108,7 +108,7 @@ Connecting an MCP client to an already-deployed server: **[`docs/introduce.md`](
 ## 📥 Usage
 
 1. Register `{WORKER_BASE_URL}/mcp` in your MCP client as a Streamable HTTP MCP.
-2. On first connect, approve the client on this server's approval page (once per browser and client), then sign in with Google and grant the Drive scopes.
+2. On first connect, approve the client on this server's approval page (once per browser, client and redirect URI), then sign in with Google and grant the Drive scopes.
 3. Call `prepare_upload` to get `uploadUrl` / `uploadToken` / `uploadId`.
 4. `PUT` the file body:
    ```bash

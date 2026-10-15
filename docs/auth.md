@@ -15,7 +15,7 @@
 | 役割 | 担当 |
 |---|---|
 | MCP クライアント向け OAuth 2.1 AS | `OAuthProvider` ([src/index.ts](../src/index.ts)) |
-| クライアント承認 UI | 本サーバーの承認画面 ([src/auth/approval.ts](../src/auth/approval.ts))。クライアント名と redirect 先ホストを表示し、ブラウザ × クライアントごとに初回のみ出す |
+| クライアント承認 UI | 本サーバーの承認画面 ([src/auth/approval.ts](../src/auth/approval.ts))。クライアント名と redirect 先ホストを表示し、ブラウザ × (クライアント, redirect_uri) ごとに初回のみ出す |
 | ログイン・スコープ同意 UI | upstream Google (本サーバーは独自ログイン画面を持たない) |
 | Google IdP との code 交換 / userinfo 取得 | [src/auth/google.ts](../src/auth/google.ts) |
 | Google access/refresh token 保管とリフレッシュ | [src/auth/tokens.ts](../src/auth/tokens.ts) |
@@ -24,9 +24,11 @@
 
 | パス | メソッド | 役割 |
 |---|---|---|
-| `/authorize` | GET | OAuth リクエスト受領・検証 → state 保存 + state Cookie 発行 → 承認済みクライアントなら Google にリダイレクト、未承認なら承認画面を表示 |
+| `/authorize` | GET | OAuth リクエスト受領・検証 → state 保存 + state Cookie 発行 → (`client_id`, `redirect_uri`) が承認済みなら Google にリダイレクト、未承認なら承認画面を表示 |
 | `/authorize` | POST | 承認画面の送信。state Cookie とフォームの `state` を照合 (CSRF) → 承認済み Cookie に追加 → Google にリダイレクト |
 | `/callback` | GET | Google からのリダイレクト着地 → state Cookie 照合 → code 交換 → `completeAuthorization` |
+| `/oauth/token` | POST | クライアントへの access token 発行 (OAuthProvider 標準) |
+| `/oauth/register` | POST | Dynamic Client Registration (OAuthProvider 標準) |
 
 ## `/authorize` で拒否するリクエスト
 
@@ -44,17 +46,18 @@
 認可コードが攻撃者に届いてしまう (confused deputy)。Google の同意画面には本サーバーのアプリ名しか出ないため、
 被害者は気付けない。
 
-そのため、ブラウザがまだ承認していない `client_id` では Google に進む前に承認画面を表示する:
+そのため、ブラウザがまだ承認していない **`client_id` と `redirect_uri` の組** では Google に進む前に承認画面を表示する:
 
-- 表示内容: クライアント名 (自己申告なので参考情報)、**認可コードの送信先ホスト**と `redirect_uri`
-- 承認すると `COOKIE_SECRET` で HMAC 署名した `__Host-gdmcp_approved` Cookie に `client_id` を追加し、
-  次回以降そのクライアントは承認画面を出さずに Google へ進む
+- 表示内容: クライアント名 (自己申告なので参考情報)、**認可コードの送信先ホスト**と `redirect_uri`、
+  そのクライアントに登録されている全 `redirect_uri`
+- 承認すると `COOKIE_SECRET` で HMAC 署名した `__Host-gdmcp_approved` Cookie に
+  `SHA-256(client_id, redirect_uri)` を追加し、次回以降その組は承認画面を出さずに Google へ進む
+- 承認を `client_id` 単位にしないのは、DCR で `redirect_uri` を複数登録したクライアントが、正規の送信先で
+  承認させた後に別の送信先 (攻撃者のサーバー) へ承認画面なしで認可コードを送れてしまうため
 - CSRF 対策: `GET /authorize` で発行した `__Host-gdmcp_state` Cookie とフォームの `state` が一致しないと 403
 - クリックジャッキング対策: `frame-ancestors 'none'` / `X-Frame-Options: DENY`
 
 Cookie の詳細は [data-model.md](./data-model.md#oauth-用-cookie)。
-| `/oauth/token` | POST | クライアントへの access token 発行 (OAuthProvider 標準) |
-| `/oauth/register` | POST | Dynamic Client Registration (OAuthProvider 標準) |
 
 ## Google から要求するスコープ
 

@@ -118,7 +118,7 @@ npm run dev                       # http://localhost:8787
 ## 📥 使い方
 
 1. MCP クライアントに `{WORKER_BASE_URL}/mcp` を Streamable HTTP MCP として登録。
-2. 初回接続時に本サーバーのクライアント承認画面 (ブラウザ × クライアントごとに初回のみ) → Google ログイン → Drive スコープを承認。
+2. 初回接続時に本サーバーのクライアント承認画面 (ブラウザ × クライアント・redirect_uri ごとに初回のみ) → Google ログイン → Drive スコープを承認。
 3. `prepare_upload` を呼び `uploadUrl` / `uploadToken` / `uploadId` を取得。
 4. ファイル本体を `PUT`:
    ```bash

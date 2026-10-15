@@ -8,12 +8,12 @@ sequenceDiagram
     C->>O: GET /authorize?client_id=&redirect_uri=&code_challenge=(S256)&state=
     O->>O: parseAuthRequest(req) + lookupClient / redirect_uri / PKCE S256 check
     O->>K: put oauthstate:<state> = AuthRequest
-    alt client_id not in signed approval cookie
-        O-->>C: 200 approval page (client name, redirect host) + Set-Cookie state
+    alt (client_id, redirect_uri) not in signed approval cookie
+        O-->>C: 200 approval page (client name, redirect host, all registered redirect_uris) + Set-Cookie state
         C->>O: POST /authorize (state, Cookie: state)
         O->>O: form state == state cookie (CSRF)
-        O-->>C: 302 to Google + Set-Cookie approved client_ids (HMAC)
-    else already approved in this browser
+        O-->>C: 302 to Google + Set-Cookie approved (client_id, redirect_uri) keys (HMAC)
+    else pair already approved in this browser
         O-->>C: 302 to Google + Set-Cookie state
     end
     C->>G: GET auth endpoint (scope=drive.file drive.readonly ...)
