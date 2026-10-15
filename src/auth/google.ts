@@ -1,6 +1,15 @@
-import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+import type { AuthRequest, ClientInfo, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 import type { Env, UserProps } from "../env";
 import { exchangeAuthCode, fetchGoogleUserInfo, putTokenRecord } from "./tokens";
+import {
+  STATE_COOKIE,
+  approvedClientsCookie,
+  clearStateCookie,
+  getCookie,
+  readApprovedClients,
+  renderApprovalPage,
+  stateCookie,
+} from "./approval";
 
 interface AuthEnv extends Env {
   OAUTH_PROVIDER: OAuthHelpers;
@@ -24,6 +33,10 @@ export const googleAuthHandler = {
 
     if (url.pathname === "/authorize" && request.method === "GET") {
       return startGoogleSignin(request, env);
+    }
+
+    if (url.pathname === "/authorize" && request.method === "POST") {
+      return handleApproval(request, env);
     }
 
     if (url.pathname === "/callback" && request.method === "GET") {
@@ -65,14 +78,85 @@ export const googleAuthHandler = {
   },
 };
 
+function badRequest(message: string): Response {
+  return new Response(message, {
+    status: 400,
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  });
+}
+
+function misconfigured(): Response {
+  return new Response("Server misconfigured: COOKIE_SECRET is not set", { status: 500 });
+}
+
+/** Rejects requests the provider library lets through: unknown clients, unregistered redirect URIs, missing/plain PKCE. */
+function validateAuthRequest(oauthReq: AuthRequest, client: ClientInfo | null): string | null {
+  if (!client) return "Unknown client_id";
+  if (!oauthReq.redirectUri || !client.redirectUris.includes(oauthReq.redirectUri)) {
+    return "redirect_uri is missing or not registered for this client";
+  }
+  if (oauthReq.responseType !== "code") return "response_type must be 'code'";
+  if (!oauthReq.codeChallenge || oauthReq.codeChallengeMethod !== "S256") {
+    return "PKCE with code_challenge_method=S256 is required";
+  }
+  return null;
+}
+
 async function startGoogleSignin(request: Request, env: AuthEnv): Promise<Response> {
-  const oauthReq = await env.OAUTH_PROVIDER.parseAuthRequest(request);
+  if (!env.COOKIE_SECRET) return misconfigured();
+
+  let oauthReq: AuthRequest;
+  try {
+    oauthReq = await env.OAUTH_PROVIDER.parseAuthRequest(request);
+  } catch (e) {
+    return badRequest((e as Error).message);
+  }
+  const client = oauthReq.clientId ? await env.OAUTH_PROVIDER.lookupClient(oauthReq.clientId) : null;
+  const invalid = validateAuthRequest(oauthReq, client);
+  if (invalid) return badRequest(invalid);
 
   const state = crypto.randomUUID();
   await env.OAUTH_KV.put(stateKey(state), JSON.stringify(oauthReq), {
     expirationTtl: STATE_TTL_SECONDS,
   });
 
+  // Clients registered via open DCR may belong to anyone, so the user must
+  // confirm each client once per browser before we send them to Google.
+  const approved = await readApprovedClients(request, env.COOKIE_SECRET);
+  if (approved.includes(oauthReq.clientId)) {
+    return redirectToGoogle(request, env, state, []);
+  }
+  return renderApprovalPage({ client: client!, redirectUri: oauthReq.redirectUri, state });
+}
+
+async function handleApproval(request: Request, env: AuthEnv): Promise<Response> {
+  if (!env.COOKIE_SECRET) return misconfigured();
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return badRequest("Expected a form submission");
+  }
+  const state = form.get("state");
+  // The state doubles as the CSRF token: it must match the cookie set on GET /authorize.
+  if (typeof state !== "string" || !state || getCookie(request, STATE_COOKIE) !== state) {
+    return new Response("Invalid or missing CSRF token", { status: 403 });
+  }
+  const stored = await env.OAUTH_KV.get(stateKey(state));
+  if (!stored) return badRequest("Invalid or expired state");
+  const oauthReq = JSON.parse(stored) as AuthRequest;
+
+  const approved = await approvedClientsCookie(request, oauthReq.clientId, env.COOKIE_SECRET);
+  return redirectToGoogle(request, env, state, [approved]);
+}
+
+function redirectToGoogle(
+  request: Request,
+  env: AuthEnv,
+  state: string,
+  extraCookies: string[]
+): Response {
   const params = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID,
     redirect_uri: redirectUri(request),
@@ -83,7 +167,10 @@ async function startGoogleSignin(request: Request, env: AuthEnv): Promise<Respon
     state,
   });
 
-  return Response.redirect(`${GOOGLE_AUTH_URL}?${params.toString()}`, 302);
+  const headers = new Headers({ Location: `${GOOGLE_AUTH_URL}?${params.toString()}` });
+  headers.append("Set-Cookie", stateCookie(state));
+  for (const c of extraCookies) headers.append("Set-Cookie", c);
+  return new Response(null, { status: 302, headers });
 }
 
 async function handleGoogleCallback(request: Request, env: AuthEnv): Promise<Response> {
@@ -94,6 +181,10 @@ async function handleGoogleCallback(request: Request, env: AuthEnv): Promise<Res
 
   if (error) return new Response(`Google OAuth error: ${error}`, { status: 400 });
   if (!state || !code) return new Response("Missing state or code", { status: 400 });
+  // Bind the callback to the browser that started the flow (login CSRF).
+  if (getCookie(request, STATE_COOKIE) !== state) {
+    return new Response("State does not match this browser session", { status: 400 });
+  }
 
   const stored = await env.OAUTH_KV.get(stateKey(state));
   if (!stored) return new Response("Invalid or expired state", { status: 400 });
@@ -131,5 +222,7 @@ async function handleGoogleCallback(request: Request, env: AuthEnv): Promise<Res
     props,
   });
 
-  return Response.redirect(redirectTo, 302);
+  const headers = new Headers({ Location: redirectTo });
+  headers.append("Set-Cookie", clearStateCookie());
+  return new Response(null, { status: 302, headers });
 }
