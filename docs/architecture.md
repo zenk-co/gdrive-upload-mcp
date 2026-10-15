@@ -7,7 +7,7 @@
 1. **制御プレーンとデータプレーンの分離** — MCP/JSON-RPC は調停のみ。ファイル本体は別エンドポイントへ直接 PUT
 2. **短命・最小権限のトークン** — アップロード許可は `uploadId / userId / maxSize / contentType / sha256` に厳密にバインドした HMAC JWT (TTL 15 分)
 3. **二重検証** — クライアント計算 SHA-256 と Worker 計算 SHA-256、両方が一致しなければファイルを破棄
-4. **ユーザー本人の Drive に保存** — MCP 接続時の Google OAuth で得た `drive.file` 権限を流用し、サーバー横断の共有ストレージにはしない
+4. **ユーザー本人の Drive に保存** — MCP 接続時の Google OAuth で得た `drive.file` / `drive.readonly` 権限を流用し、サーバー横断の共有ストレージにはしない
 
 ## システム概観
 
@@ -20,7 +20,7 @@
 | コンポーネント | 役割 | 実装 |
 |---|---|---|
 | OAuthProvider | OAuth 2.1 認可サーバー。MCP クライアント向けに access token を発行し、`/mcp` の Bearer を検証 | [`@cloudflare/workers-oauth-provider`](https://github.com/cloudflare/workers-oauth-provider) を [src/index.ts](../src/index.ts) で wrap |
-| Google IdP ハンドラ | `/authorize` `/callback` を実装し、upstream の Google OAuth に委譲。`drive.file` + `drive.readonly` スコープを取得し `props` を発行 | [src/auth/google.ts](../src/auth/google.ts) |
+| Google IdP ハンドラ | `/authorize` `/callback` を実装し、upstream の Google OAuth に委譲。未承認クライアントには承認画面を出す。`drive.file` + `drive.readonly` スコープを取得し `props` を発行 | [src/auth/google.ts](../src/auth/google.ts) |
 | McpAgent (DO) | MCP の Streamable HTTP エンドポイント。アップロード系/Drive 読み取り・管理系ツールを公開 | [src/mcp/agent.ts](../src/mcp/agent.ts), [src/mcp/tools.ts](../src/mcp/tools.ts), [src/mcp/drive-tools.ts](../src/mcp/drive-tools.ts) |
 | Upload handler | `PUT /upload/:uploadId` を受信。`Content-Range` の有無で単一/分割をディスパッチ。単一は JWT 検証 → Drive resumable session 初期化 → SHA-256 計測しつつストリームリレー | [src/upload/handler.ts](../src/upload/handler.ts) |
 | Download handler | `GET /download/:downloadId` を受信。ダウンロードトークン検証 → Drive から本体を直接ストリーム（バイトは MCP を通さない） | [src/download/handler.ts](../src/download/handler.ts) |
@@ -59,7 +59,7 @@
 | `OAUTH_KV` | KV | OAuthProvider と OAuth state の保管 |
 | `JWT_SIGNING_KEY` | Secret | HS256 共有鍵 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Secret | Google OAuth クライアント資格 |
-| `COOKIE_SECRET` | Secret | OAuthProvider のセッション署名 |
+| `COOKIE_SECRET` | Secret | 「承認済みクライアント」Cookie の HMAC 署名 (`/authorize` の承認画面) |
 | `WORKER_BASE_URL` | Var | アップロード URL 生成と OAuth redirect の基底 URL |
 | `MAX_UPLOAD_BYTES` | Var | アップロード上限 (バイト) |
 | `TOKEN_TTL_SECONDS` | Var | アップロード JWT の TTL |

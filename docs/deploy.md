@@ -35,6 +35,7 @@ npm install --legacy-peer-deps
    - `email`
    - `profile`
    - `https://www.googleapis.com/auth/drive.file`
+   - `https://www.googleapis.com/auth/drive.readonly` (検索・閲覧・ダウンロード用。Google の「制限付きスコープ」)
 
 ### 3. Cloudflare にログインして KV を 3 つ作成
 
@@ -55,6 +56,8 @@ openssl rand -base64 48 | tr -d '\n' | npx wrangler secret put COOKIE_SECRET
 echo -n "<step 2 の client_id>"     | npx wrangler secret put GOOGLE_CLIENT_ID
 echo -n "<step 2 の client_secret>" | npx wrangler secret put GOOGLE_CLIENT_SECRET
 ```
+
+`COOKIE_SECRET` は「承認済みクライアント」Cookie の HMAC 署名に使う。未設定だと `/authorize` が 500 を返す。
 
 ### 5. 初回デプロイ
 
@@ -92,7 +95,7 @@ https://gdrive-upload-mcp.<your-subdomain>.workers.dev/callback
 |---|---|---|
 | `MAX_UPLOAD_BYTES` | `104857600` (100 MB) | 1 ファイルあたりの上限。500 MB 等にするには Cloudflare Workers Paid プランが必要 |
 | `TOKEN_TTL_SECONDS` | `900` (15 分) | `prepare_upload` で発行する JWT の有効期間 |
-| `GOOGLE_OAUTH_SCOPES` | `openid email profile https://www.googleapis.com/auth/drive.file` | Google から要求するスコープ |
+| `GOOGLE_OAUTH_SCOPES` | `openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly` | Google から要求するスコープ。`drive.readonly` を外すと `search_files` / `get_file_metadata` / `download_file` はアプリ作成ファイル以外で失敗する |
 
 ## ローカル開発
 
@@ -112,6 +115,9 @@ npm run docs:build                  # mermaid → SVG
 |---|---|
 | `Cannot POST /register` で接続失敗 | `/.well-known/oauth-protected-resource` が 200 を返すか確認 (RFC 9728 のメタデータが必要) |
 | `redirect_uri_mismatch` | Google Cloud Console の「承認済みのリダイレクト URI」に当該 URL が登録されているか |
+| `/authorize` が 400 (`PKCE with code_challenge_method=S256 is required` / `redirect_uri is missing or not registered` / `Unknown client_id`) | クライアントが PKCE S256 を使っているか、DCR で登録した `redirect_uri` と一致しているか。クライアント情報が消えた場合はクライアント側で接続し直す (再登録) |
+| `/callback` が 400 (`State does not match this browser session`) | 認可の途中でブラウザが切り替わった (アプリ内ブラウザ → 外部ブラウザ等) か Cookie がブロックされている。同じブラウザで接続をやり直す |
+| `/authorize` が 500 (`COOKIE_SECRET is not set`) | `npx wrangler secret put COOKIE_SECRET` を実行 |
 | `not authenticated` でツール実行が失敗 | OAuth 接続を一度切断 → 再接続。`npx wrangler kv key list --binding=TOKEN_KV` でトークン保存状態確認 |
 | `complete_upload` が `pending` のまま | KV ではなく `UPLOAD_SESSION` DO ストレージを参照するように修正済み。それでも出る場合は `wrangler tail` でリクエストログを |
 | クライアントの sandbox が PUT を弾く | 利用者に Worker ドメインを許可リストに追加してもらう ([introduce.md](./introduce.md) 参照) |

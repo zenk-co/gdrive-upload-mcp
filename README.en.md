@@ -32,7 +32,7 @@ Its defining design choice is a **control plane / data plane split**: file bytes
 | 🚀 **Large files** | Bytes bypass JSON-RPC and stream directly to Drive — no base64 bloat, no message-size limits. |
 | 🔐 **Per-upload credentials** | Each upload gets a short-lived JWT scoped to one `uploadId` / `userId` / size / content-type / SHA-256. |
 | 🧮 **End-to-end integrity** | The Worker computes SHA-256 while streaming and verifies it once the relay completes; on mismatch the Drive file is deleted (best-effort). |
-| 🪪 **User-owned storage** | OAuth 2.1 with Google as the upstream IdP. Files land in the *user's* Drive (`drive.file` scope); the operator can't read them. |
+| 🪪 **User-owned storage** | OAuth 2.1 with Google as the upstream IdP. Files land in the *user's* Drive; the server never stores file bytes. Scopes are `drive.file` (create/delete) and `drive.readonly` (search/read/download across the whole Drive). |
 | 🧩 **Two small tools** | `prepare_upload` and `complete_upload` — that's the entire control surface. |
 
 ## 🌐 Requirement: your agent must allow egress to the upload endpoint
@@ -108,7 +108,7 @@ Connecting an MCP client to an already-deployed server: **[`docs/introduce.md`](
 ## 📥 Usage
 
 1. Register `{WORKER_BASE_URL}/mcp` in your MCP client as a Streamable HTTP MCP.
-2. On first connect, authorize via Google and grant the Drive scope.
+2. On first connect, approve the client on this server's approval page (once per browser and client), then sign in with Google and grant the Drive scopes.
 3. Call `prepare_upload` to get `uploadUrl` / `uploadToken` / `uploadId`.
 4. `PUT` the file body:
    ```bash
@@ -147,7 +147,8 @@ Connecting an MCP client to an already-deployed server: **[`docs/introduce.md`](
 ## ⚠️ Limitations
 
 - Single-`PUT` size is capped by Cloudflare Workers limits (`MAX_UPLOAD_BYTES`). Chunked `PUT` exists for larger files.
-- `drive.file` scope means only files created through this server are visible to the Drive API.
+- `delete_file` uses the `drive.file` scope, so it can only delete files created through this server.
+  `search_files` / `get_file_metadata` / `download_file` use `drive.readonly` and cover the user's whole Drive.
 - KV is eventually consistent; a `complete_upload` immediately after `prepare_upload` may rarely need a retry.
 
 ## 🤝 Contributing

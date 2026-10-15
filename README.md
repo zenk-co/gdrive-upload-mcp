@@ -32,7 +32,7 @@
 | 🚀 **大容量ファイル** | バイト列が JSON-RPC を経由せず Drive へ直接ストリーム。base64 肥大もメッセージサイズ制限もなし。 |
 | 🔐 **アップロード単位の認証情報** | アップロードごとに、単一の `uploadId` / `userId` / サイズ / content-type / SHA-256 に紐づく短命 JWT を発行。 |
 | 🧮 **エンドツーエンドの整合性** | Worker がストリーム中に SHA-256 を計算し、Drive へのリレー完了後に照合。不一致なら Drive のファイルを削除(best-effort)。 |
-| 🪪 **ユーザー所有のストレージ** | OAuth 2.1、upstream IdP は Google。ファイルは*ユーザー自身*の Drive (`drive.file` スコープ) に保存され、運用者は中身を読めない。 |
+| 🪪 **ユーザー所有のストレージ** | OAuth 2.1、upstream IdP は Google。ファイルは*ユーザー自身*の Drive に保存され、サーバーにはファイル本体を保存しない。スコープは `drive.file` (作成/削除) と `drive.readonly` (Drive 全体の検索/閲覧/ダウンロード)。 |
 | 🧩 **2 つの小さなツール** | `prepare_upload` と `complete_upload` だけが操作面。 |
 
 ## 🌐 必要要件: エージェントが送信先への egress を許可できること
@@ -118,7 +118,7 @@ npm run dev                       # http://localhost:8787
 ## 📥 使い方
 
 1. MCP クライアントに `{WORKER_BASE_URL}/mcp` を Streamable HTTP MCP として登録。
-2. 初回接続時に Google ログイン → Drive スコープを承認。
+2. 初回接続時に本サーバーのクライアント承認画面 (ブラウザ × クライアントごとに初回のみ) → Google ログイン → Drive スコープを承認。
 3. `prepare_upload` を呼び `uploadUrl` / `uploadToken` / `uploadId` を取得。
 4. ファイル本体を `PUT`:
    ```bash
