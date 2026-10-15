@@ -3,10 +3,10 @@ import type { Env, UserProps } from "../env";
 import { exchangeAuthCode, fetchGoogleUserInfo, putTokenRecord } from "./tokens";
 import {
   STATE_COOKIE,
-  approvedClientsCookie,
+  approvalCookie,
   clearStateCookie,
   getCookie,
-  readApprovedClients,
+  isApproved,
   renderApprovalPage,
   stateCookie,
 } from "./approval";
@@ -121,9 +121,10 @@ async function startGoogleSignin(request: Request, env: AuthEnv): Promise<Respon
   });
 
   // Clients registered via open DCR may belong to anyone, so the user must
-  // confirm each client once per browser before we send them to Google.
-  const approved = await readApprovedClients(request, env.COOKIE_SECRET);
-  if (approved.includes(oauthReq.clientId)) {
+  // confirm each (client, redirect_uri) pair once per browser before we send
+  // them to Google. Keying on the pair stops a client that registered several
+  // redirect URIs from reusing an approval to send codes elsewhere.
+  if (await isApproved(request, oauthReq.clientId, oauthReq.redirectUri, env.COOKIE_SECRET)) {
     return redirectToGoogle(request, env, state, []);
   }
   return renderApprovalPage({ client: client!, redirectUri: oauthReq.redirectUri, state });
@@ -147,7 +148,12 @@ async function handleApproval(request: Request, env: AuthEnv): Promise<Response>
   if (!stored) return badRequest("Invalid or expired state");
   const oauthReq = JSON.parse(stored) as AuthRequest;
 
-  const approved = await approvedClientsCookie(request, oauthReq.clientId, env.COOKIE_SECRET);
+  const approved = await approvalCookie(
+    request,
+    oauthReq.clientId,
+    oauthReq.redirectUri,
+    env.COOKIE_SECRET
+  );
   return redirectToGoogle(request, env, state, [approved]);
 }
 

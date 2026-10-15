@@ -94,14 +94,21 @@ function hiddenState(html: string): string {
   return m[1]!;
 }
 
-async function approve(clientId: string): Promise<{ state: string; approvedCookie: string }> {
-  const page = await call(authorizeQuery(clientId));
+async function approve(
+  clientId: string,
+  redirectUri = CLIENT_REDIRECT,
+  cookies: string[] = []
+): Promise<{ state: string; approvedCookie: string }> {
+  const page = await call(authorizeQuery(clientId, { redirect_uri: redirectUri }), {
+    headers: cookies.length ? { Cookie: cookies.join("; ") } : {},
+  });
+  expect(page.status).toBe(200);
   const state = hiddenState(await page.text());
   const res = await call("/authorize", {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
-      Cookie: `${STATE_COOKIE}=${state}`,
+      Cookie: [`${STATE_COOKIE}=${state}`, ...cookies].join("; "),
     },
     body: new URLSearchParams({ state }).toString(),
   });
@@ -250,6 +257,69 @@ describe("/authorize client approval", () => {
     );
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("attacker.example");
+  });
+
+  test("the approval page lists every redirect URI the client registered", async () => {
+    const clientId = await registerClient("Multi", [CLIENT_REDIRECT, "https://evil.example/cb"]);
+    const res = await call(authorizeQuery(clientId));
+    const html = await res.text();
+    expect(html).toContain(CLIENT_REDIRECT);
+    expect(html).toContain("https://evil.example/cb");
+  });
+
+  test("approval is per redirect_uri: a second registered redirect_uri needs its own approval", async () => {
+    const evil = "https://evil.example/cb";
+    const clientId = await registerClient("Multi", [CLIENT_REDIRECT, evil]);
+    const { approvedCookie } = await approve(clientId, CLIENT_REDIRECT);
+
+    // Same client, other redirect_uri: must show the approval page, not redirect to Google.
+    const other = await call(authorizeQuery(clientId, { redirect_uri: evil }), {
+      headers: { Cookie: approvedCookie },
+    });
+    expect(other.status).toBe(200);
+    expect(other.headers.get("Location")).toBeNull();
+    expect(await other.text()).toContain("evil.example");
+
+    // The approved pair still goes straight through.
+    const same = await call(authorizeQuery(clientId), { headers: { Cookie: approvedCookie } });
+    expect(same.status).toBe(302);
+    expect(new URL(same.headers.get("Location")!).origin).toBe("https://accounts.google.com");
+  });
+
+  test("approving a second redirect_uri keeps the first approval", async () => {
+    const second = "https://client.example/cb2";
+    const clientId = await registerClient("Multi", [CLIENT_REDIRECT, second]);
+    const first = await approve(clientId, CLIENT_REDIRECT);
+    const both = await approve(clientId, second, [first.approvedCookie]);
+
+    for (const redirectUri of [CLIENT_REDIRECT, second]) {
+      const res = await call(authorizeQuery(clientId, { redirect_uri: redirectUri }), {
+        headers: { Cookie: both.approvedCookie },
+      });
+      expect(res.status).toBe(302);
+    }
+  });
+
+  test("an approval cookie in the old client_id-only format is not honoured", async () => {
+    const clientId = await registerClient("App");
+    // v1 payload: a bare JSON array of client_ids, correctly signed with COOKIE_SECRET.
+    const payload = Buffer.from(JSON.stringify([clientId])).toString("base64url");
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(env.COOKIE_SECRET),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const sig = Buffer.from(
+      await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload))
+    ).toString("base64url");
+
+    const res = await call(authorizeQuery(clientId), {
+      headers: { Cookie: `${APPROVED_COOKIE}=${payload}.${sig}` },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Location")).toBeNull();
   });
 
   test("a tampered approval cookie is ignored", async () => {

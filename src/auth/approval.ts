@@ -5,12 +5,14 @@ import type { ClientInfo } from "@cloudflare/workers-oauth-provider";
  * (double-submit CSRF token) and on /callback (login CSRF).
  */
 export const STATE_COOKIE = "__Host-gdmcp_state";
-/** HMAC-signed list of client_ids this browser has approved. */
+/** HMAC-signed list of (client_id, redirect_uri) pairs this browser has approved. */
 export const APPROVED_COOKIE = "__Host-gdmcp_approved";
 
 const STATE_COOKIE_MAX_AGE = 600;
 const APPROVED_COOKIE_MAX_AGE = 365 * 24 * 3600;
-const MAX_APPROVED_CLIENTS = 30;
+const MAX_APPROVALS = 30;
+/** Payload format version. v1 (a bare array of client_ids) is no longer honoured. */
+const APPROVAL_FORMAT = 2;
 
 export function getCookie(request: Request, name: string): string | null {
   const header = request.headers.get("Cookie");
@@ -53,8 +55,20 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
   );
 }
 
-/** Returns the verified approved client_ids, or [] if the cookie is absent or tampered. */
-export async function readApprovedClients(request: Request, secret: string): Promise<string[]> {
+/**
+ * Approval is per (client_id, redirect_uri): a DCR client may register several
+ * redirect URIs, and approving one must not authorize sending codes to another.
+ */
+async function approvalKey(clientId: string, redirectUri: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify([clientId, redirectUri]))
+  );
+  return base64UrlEncode(new Uint8Array(digest));
+}
+
+/** Returns the verified approval keys, or [] if the cookie is absent, tampered or in an old format. */
+async function readApprovalKeys(request: Request, secret: string): Promise<string[]> {
   const raw = getCookie(request, APPROVED_COOKIE);
   if (!raw) return [];
   const dot = raw.indexOf(".");
@@ -68,22 +82,37 @@ export async function readApprovedClients(request: Request, secret: string): Pro
       new TextEncoder().encode(payload)
     );
     if (!ok) return [];
-    const ids = JSON.parse(new TextDecoder().decode(base64UrlDecode(payload)));
-    return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
+    const data = JSON.parse(new TextDecoder().decode(base64UrlDecode(payload)));
+    if (data?.v !== APPROVAL_FORMAT || !Array.isArray(data.k)) return [];
+    return data.k.filter((x: unknown): x is string => typeof x === "string");
   } catch {
     return [];
   }
 }
 
-/** Builds a Set-Cookie value that adds `clientId` to the approved list. */
-export async function approvedClientsCookie(
+export async function isApproved(
   request: Request,
   clientId: string,
+  redirectUri: string,
+  secret: string
+): Promise<boolean> {
+  const keys = await readApprovalKeys(request, secret);
+  return keys.includes(await approvalKey(clientId, redirectUri));
+}
+
+/** Builds a Set-Cookie value that adds (`clientId`, `redirectUri`) to the approved list. */
+export async function approvalCookie(
+  request: Request,
+  clientId: string,
+  redirectUri: string,
   secret: string
 ): Promise<string> {
-  const existing = (await readApprovedClients(request, secret)).filter((id) => id !== clientId);
-  const ids = [...existing, clientId].slice(-MAX_APPROVED_CLIENTS);
-  const payload = base64UrlEncode(new TextEncoder().encode(JSON.stringify(ids)));
+  const key = await approvalKey(clientId, redirectUri);
+  const existing = (await readApprovalKeys(request, secret)).filter((k) => k !== key);
+  const keys = [...existing, key].slice(-MAX_APPROVALS);
+  const payload = base64UrlEncode(
+    new TextEncoder().encode(JSON.stringify({ v: APPROVAL_FORMAT, k: keys }))
+  );
   const sig = new Uint8Array(
     await crypto.subtle.sign("HMAC", await hmacKey(secret), new TextEncoder().encode(payload))
   );
@@ -109,9 +138,10 @@ function redirectHost(redirectUri: string): string {
 }
 
 /**
- * Consent page shown the first time a browser authorizes a given client.
- * The client name is self-declared at registration, so the redirect host is
- * shown prominently: that is where the authorization code will be sent.
+ * Consent page shown the first time a browser authorizes a given client and
+ * redirect URI. The client name is self-declared at registration, so the
+ * redirect host is shown prominently (that is where the authorization code
+ * will be sent), along with every redirect URI the client registered.
  */
 export function renderApprovalPage(args: {
   client: ClientInfo;
@@ -122,6 +152,9 @@ export function renderApprovalPage(args: {
   const host = escapeHtml(redirectHost(args.redirectUri));
   const uri = escapeHtml(args.redirectUri);
   const state = escapeHtml(args.state);
+  const registered = args.client.redirectUris
+    .map((u) => `<li${u === args.redirectUri ? ' class="current"' : ""}>${escapeHtml(u)}</li>`)
+    .join("\n");
   const html = `<!doctype html>
 <html lang="ja">
 <head>
@@ -134,6 +167,8 @@ body{font-family:system-ui,sans-serif;max-width:36rem;margin:3rem auto;padding:0
 .host{font-size:1.25rem;font-weight:bold;word-break:break-all}
 .uri{color:#666;font-size:.85rem;word-break:break-all}
 .warn{background:#fff4e5;border-left:4px solid #f0a020;padding:.5rem .75rem}
+.registered{font-size:.85rem;word-break:break-all}
+.registered .current{font-weight:bold}
 button{font-size:1rem;padding:.5rem 1.5rem;margin-top:1rem}
 </style>
 </head>
@@ -142,10 +177,14 @@ button{font-size:1rem;padding:.5rem 1.5rem;margin-top:1rem}
 <div class="box">
 <p>クライアント名 / Client: <strong>${name}</strong></p>
 <p>認可後の送信先 / Redirects to:<br><span class="host">${host}</span><br><span class="uri">${uri}</span></p>
+<p>このクライアントに登録されている送信先 / All registered redirect URIs:</p>
+<ul class="registered">
+${registered}
+</ul>
 </div>
 <p>承認すると、このクライアントはあなたの Google Drive 全体のファイルを検索・ダウンロードでき、ファイルのアップロードと (このサーバーで作成したファイルの) 削除もできるようになります。</p>
-<p class="warn">クライアント名は登録者の自己申告です。送信先が普段使っている MCP クライアント (例: Claude) のものか確認してください。心当たりがなければこのページを閉じてください。<br>
-The client name is self-declared. Only approve if the destination above belongs to the MCP client you are connecting. Otherwise, close this page.</p>
+<p class="warn">クライアント名は登録者の自己申告です。送信先が普段使っている MCP クライアント (例: Claude) のものか確認してください。登録済みの送信先に見覚えのないものが含まれる場合や、心当たりがない場合はこのページを閉じてください。承認はこの送信先に対してのみ記憶され、別の送信先では再度確認されます。<br>
+The client name is self-declared. Only approve if the destination above belongs to the MCP client you are connecting, and be wary if the client registered unfamiliar destinations. Approval is remembered for this destination only. Otherwise, close this page.</p>
 <form method="post" action="/authorize">
 <input type="hidden" name="state" value="${state}">
 <button type="submit">承認して Google にログイン / Approve</button>
