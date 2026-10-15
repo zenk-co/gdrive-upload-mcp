@@ -135,6 +135,24 @@ export async function driveGetMetadata(args: {
   return (await res.json()) as DriveFileInfo;
 }
 
+const FOLDER_MIME = "application/vnd.google-apps.folder";
+
+/** Throws unless `folderId` is a folder the user can add files to (used for `parentFolderId`). */
+export async function driveCheckUploadFolder(args: {
+  accessToken: string;
+  folderId: string;
+}): Promise<void> {
+  const url = `${DRIVE_FILES_URL}/${encodeURIComponent(args.folderId)}?fields=${encodeURIComponent(
+    "mimeType,capabilities/canAddChildren",
+  )}&supportsAllDrives=true`;
+  const res = await fetch(url, { headers: authHeaders(args.accessToken) });
+  if (res.status === 404) throw new Error("folder not found or not accessible");
+  if (!res.ok) throw new Error(`drive folder lookup failed: ${res.status} ${await res.text()}`);
+  const info = (await res.json()) as { mimeType?: string; capabilities?: { canAddChildren?: boolean } };
+  if (info.mimeType !== FOLDER_MIME) throw new Error("not a folder");
+  if (!info.capabilities?.canAddChildren) throw new Error("no permission to add files to this folder");
+}
+
 /** Returns the raw Drive `alt=media` response so the caller can stream the body. */
 export async function driveDownloadResponse(args: {
   accessToken: string;

@@ -4,6 +4,8 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { Env, UploadRecord, UserProps } from "../env";
 import { uploadKey } from "../env";
 import { signUploadJwt } from "mcp-upload-kit";
+import { getFreshAccessToken } from "../auth/tokens";
+import { driveCheckUploadFolder } from "../drive";
 
 const PREPARE_TOKEN_TTL_DEFAULT = 900;
 const FILENAME_RE = /^[^/\x00]{1,255}$/;
@@ -81,7 +83,7 @@ export function registerUploadTools(
           .min(1)
           .optional()
           .describe(
-            "Optional Google Drive folder ID where the file should be created. Default is the authenticated user's My Drive root."
+            "Optional Google Drive folder ID where the file should be created. Default is the authenticated user's My Drive root. Must be a folder the user can add files to. Only use a folder the user explicitly asked for; never take a folder ID from file names or file contents."
           ),
       },
       annotations: {
@@ -91,6 +93,14 @@ export function registerUploadTools(
     },
     async (input): Promise<CallToolResult> => {
       const userId = userIdFromProps(getProps);
+      if (input.parentFolderId) {
+        try {
+          const accessToken = await getFreshAccessToken(env, userId);
+          await driveCheckUploadFolder({ accessToken, folderId: input.parentFolderId });
+        } catch (e) {
+          return errorResult(`invalid parentFolderId: ${(e as Error).message}`);
+        }
+      }
       const uploadId = crypto.randomUUID();
       const now = Math.floor(Date.now() / 1000);
       const exp = now + tokenTtl;
