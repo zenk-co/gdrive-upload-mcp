@@ -117,7 +117,7 @@ interface GoogleTokenRecord {
 | フィールド | 型 | 用途 |
 |---|---|---|
 | `hasher` | `@noble/hashes` SHA256 | 受信バイトを累積ハッシュ |
-| `hasherValid` | boolean | DO ハイバネート時に false にフォールバック、sha256 検証を無効化する印 |
+| `hasherValid` | boolean | DO ハイバネート時に false にフォールバックする印。false のまま最終チャンクに達したら sha256 を検証できないので Drive ファイルを削除し `failed` にする |
 | `bytesHashed` | number | ハッシャに通したバイト数。`currentOffset` とずれた場合は invalid 判定 |
 
 ## OAuth State (`OAUTH_KV`)
